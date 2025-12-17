@@ -516,12 +516,16 @@
       body{ overflow:auto; }
       .app{ flex-direction:column; height:auto; }
       .sidebar{ width:100%; max-width:none; }
-      .map{ height: 60vh; }
+      .map{ height: 60vh; flex:auto;}
     }
   </style>
 </head>
 <body>
   <div class="app">
+    <main class="map">
+      <div id="map" aria-label="Map"></div>
+      <div id="toast" class="toast"></div>
+    </main>
     <aside class="sidebar">
       <header>
         <div class="title-row">
@@ -584,10 +588,7 @@
       </div>
     </aside>
 
-    <main class="map">
-      <div id="map" aria-label="Map"></div>
-      <div id="toast" class="toast"></div>
-    </main>
+
   </div>
 
   <!-- Add Stop dialog -->
