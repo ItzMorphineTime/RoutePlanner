@@ -1,0 +1,2036 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta author="Joe Loe">
+  <title>Itinerary Map Planner</title>
+
+  <!-- Leaflet (map) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <!-- SortableJS (drag + drop reordering) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js" defer></script>
+
+  <!-- LZ-String (URL-safe compression for share links) -->
+  <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js" defer></script>
+
+  <style>
+    :root{
+      --bg:#0b0c10;
+      --panel:#12141a;
+      --panel2:#171a22;
+      --text:#e9eef5;
+      --muted:#a9b3c1;
+      --line:#262b36;
+      --accent:#6ee7ff;
+      --accent2:#a78bfa;
+      --danger:#ff6b6b;
+      --ok:#62f6a8;
+      --shadow: 0 10px 30px rgba(0,0,0,.35);
+      --radius:16px;
+      --radius2:12px;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+
+    *{ box-sizing:border-box; }
+
+    body{
+      margin:0;
+      font-family: var(--sans);
+      background: radial-gradient(1200px 800px at 10% 10%, rgba(110,231,255,.12), transparent 60%),
+                  radial-gradient(900px 700px at 90% 20%, rgba(167,139,250,.14), transparent 60%),
+                  var(--bg);
+      color:var(--text);
+      height:100vh;
+      overflow:hidden;
+    }
+
+    .app{
+      height:100vh;
+      display:flex;
+      gap:12px;
+      padding:12px;
+    }
+
+    .sidebar{
+      width:400px;
+      min-width:320px;
+      max-width:520px;
+      background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.02));
+      border:1px solid var(--line);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
+    }
+
+    .sidebar header{
+      padding:14px 14px 10px;
+      background: rgba(255,255,255,.03);
+      border-bottom:1px solid var(--line);
+      position:sticky;
+      top:0;
+      z-index:10;
+    }
+
+    .title-row{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+    }
+
+    .title{
+      display:flex;
+      flex-direction:column;
+      gap:6px;
+      min-width: 0;
+    }
+
+    .title-top{
+      display:flex;
+      align-items:baseline;
+      gap:10px;
+      min-width:0;
+    }
+
+    .title h1{
+      margin:0;
+      font-size:16px;
+      letter-spacing:.2px;
+      white-space:nowrap;
+    }
+
+    .title span{
+      color:var(--muted);
+      font-size:12px;
+      white-space:nowrap;
+    }
+
+    .it-title{
+      width: 100%;
+      padding:8px 10px;
+      border-radius: 12px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      outline:none;
+      font-size:13px;
+    }
+
+    .it-title:focus{ border-color: rgba(110,231,255,.45); }
+
+    .btn-row{
+      margin-top:10px;
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    button, select, input[type="checkbox"]{
+      font-family: inherit;
+    }
+
+    button{
+      appearance:none;
+      border:none;
+      background: rgba(255,255,255,.06);
+      color:var(--text);
+      border:1px solid rgba(255,255,255,.08);
+      border-radius: 999px;
+      padding:8px 10px;
+      font-size:12px;
+      cursor:pointer;
+      transition: transform .08s ease, background .15s ease, border-color .15s ease;
+      user-select:none;
+    }
+
+    button:hover{ background: rgba(255,255,255,.10); border-color: rgba(255,255,255,.16); }
+    button:active{ transform: translateY(1px); }
+    button:disabled{ opacity:.45; cursor:not-allowed; }
+
+    .btn-primary{
+      background: linear-gradient(90deg, rgba(110,231,255,.18), rgba(167,139,250,.18));
+      border-color: rgba(110,231,255,.24);
+    }
+
+    .btn-danger{ border-color: rgba(255,107,107,.35); }
+
+    .route-bar{
+      margin-top:10px;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      flex-wrap:wrap;
+      padding:10px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 14px;
+      background: rgba(0,0,0,.12);
+    }
+
+    .route-bar select{
+      padding:8px 10px;
+      border-radius: 999px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      font-size: 12px;
+      outline:none;
+    }
+
+    .route-meta{
+      color: var(--muted);
+      font-size: 12px;
+      flex: 1;
+      min-width: 180px;
+    }
+
+    .toggle{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      color: var(--muted);
+      font-size: 12px;
+      user-select:none;
+    }
+
+    .helper{
+      margin-top:10px;
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.35;
+    }
+
+    .helper kbd{
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(0,0,0,.25);
+      color: var(--text);
+    }
+
+    .list-wrap{
+      padding: 10px;
+      overflow:auto;
+      flex:1;
+    }
+
+    .list{
+      list-style:none;
+      padding:0;
+      margin:0;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .stop{
+      background: rgba(255,255,255,.03);
+      border:1px solid var(--line);
+      border-radius: var(--radius2);
+      padding:10px;
+      display:grid;
+      grid-template-columns: 26px 1fr auto;
+      grid-template-rows: auto auto;
+      gap:8px 10px;
+      align-items:center;
+    }
+
+    .stop.active{
+      border-color: rgba(110,231,255,.40);
+      box-shadow: 0 0 0 3px rgba(110,231,255,.08);
+    }
+
+    .drag{
+      grid-row:1 / span 2;
+      width:26px;
+      height:26px;
+      border-radius: 10px;
+      display:grid;
+      place-items:center;
+      background: rgba(255,255,255,.05);
+      border:1px solid rgba(255,255,255,.08);
+      cursor:grab;
+      user-select:none;
+    }
+
+    .drag:active{ cursor:grabbing; }
+
+    .name{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-width: 0;
+    }
+
+    .badge{
+      min-width:22px;
+      height:22px;
+      border-radius: 999px;
+      display:grid;
+      place-items:center;
+      font-size:12px;
+      font-weight:700;
+      color:#061018;
+      background: linear-gradient(90deg, rgba(110,231,255,.92), rgba(167,139,250,.92));
+    }
+
+    input[type="text"]{
+      width:100%;
+      padding:8px 10px;
+      border-radius: 10px;
+      border:1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      outline:none;
+      font-size:13px;
+      min-width: 0;
+    }
+
+    input[type="text"]:focus{ border-color: rgba(110,231,255,.45); }
+
+    .meta{
+      grid-column: 2;
+      grid-row: 2;
+      color: var(--muted);
+      font-size: 11px;
+      font-family: var(--mono);
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+    }
+
+    .chip{
+      padding: 2px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .actions{
+      grid-column: 3;
+      grid-row: 1 / span 2;
+      display:flex;
+      gap:8px;
+      align-items:center;
+    }
+
+    .icon-btn{
+      width:34px;
+      height:34px;
+      border-radius: 12px;
+      display:grid;
+      place-items:center;
+      padding:0;
+    }
+
+    .details{
+      grid-column: 1 / -1;
+      border-top: 1px dashed rgba(255,255,255,.10);
+      padding-top: 10px;
+      margin-top: 2px;
+      display:none;
+    }
+
+    .stop.expanded .details{ display:block; }
+
+    .details-grid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+      align-items:end;
+    }
+
+    .field label{
+      display:block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    input[type="time"]{
+      width:100%;
+      padding:8px 10px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.18);
+      color: var(--text);
+      outline:none;
+      font-size: 12px;
+    }
+
+    textarea{
+      width:100%;
+      min-height: 90px;
+      resize: vertical;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(0,0,0,.20);
+      color: var(--text);
+      padding: 10px;
+      font-family: var(--sans);
+      font-size: 12px;
+      outline:none;
+      margin-top: 10px;
+    }
+
+    .details-actions{
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      margin-top: 10px;
+    }
+
+    .route-leg{
+      margin-top: 10px;
+      padding: 10px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.14);
+    }
+
+    .route-leg h4{
+      margin: 0 0 8px 0;
+      font-size: 12px;
+      letter-spacing: .2px;
+    }
+
+    .route-leg .route-meta{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-bottom: 8px;
+    }
+
+    .route-leg ul{
+      margin: 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+
+    .route-leg li{ margin: 4px 0; }
+
+    .map{
+      flex:1;
+      border-radius: var(--radius);
+      overflow:hidden;
+      border:1px solid var(--line);
+      box-shadow: var(--shadow);
+      position:relative;
+    }
+
+    #map{ height:100%; width:100%; }
+
+    .toast{
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      z-index: 9999;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(18,20,26,.92);
+      box-shadow: 0 12px 24px rgba(0,0,0,.35);
+      color: var(--text);
+      font-size: 12px;
+      max-width: 360px;
+      display:none;
+      backdrop-filter: blur(10px);
+    }
+
+    dialog{
+      width: min(780px, calc(100vw - 24px));
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,.12);
+      background: rgba(18,20,26,.96);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      padding: 0;
+    }
+
+    dialog::backdrop{
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(3px);
+    }
+
+    .modal{ padding: 14px; }
+
+    .modal header{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .modal h2{ margin:0; font-size: 14px; }
+
+    .modal .content{
+      padding-top: 12px;
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+    }
+
+    .modal .row{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      align-items:center;
+      justify-content:space-between;
+    }
+
+    .file{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+    }
+
+    input[type="file"]{ color: var(--muted); font-size: 12px; }
+
+    .hint{ color: var(--muted); font-size: 12px; line-height:1.35; }
+
+    .mono{ font-family: var(--mono); }
+
+    .hidden{ display:none !important; }
+
+    @media (max-width: 980px){
+      body{ overflow:auto; }
+      .app{ flex-direction:column; height:auto; }
+      .sidebar{ width:100%; max-width:none; }
+      .map{ height: 60vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <header>
+        <div class="title-row">
+          <div class="title" style="flex:1;">
+            <div class="title-top">
+              <h1>Itinerary Map Planner</h1>
+              <span id="stopCount">0 stops</span>
+            </div>
+            <input id="itineraryTitle" class="it-title" type="text" placeholder="Name your itinerary (e.g., Saturday in London)" />
+          </div>
+          <div style="display:flex; flex-direction:column; gap:8px; align-items:flex-end;">
+            <button id="btnLocate" title="Center map on your location">Locate</button>
+            <div style="display:flex; gap:8px;">
+              <button id="btnUndo" title="Undo (Ctrl/Cmd+Z)" disabled>Undo</button>
+              <button id="btnRedo" title="Redo (Ctrl/Cmd+Y)" disabled>Redo</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-primary" id="btnAdd">Add stop</button>
+          <button id="btnShare">Share link</button>
+          <button id="btnExport">Export JSON</button>
+          <button id="btnImport">Import JSON</button>
+          <button class="btn-danger" id="btnClear" title="Clear all stops">Clear</button>
+        </div>
+
+        <div class="route-bar" role="group" aria-label="Route estimate">
+          <select id="modeSelect" aria-label="Routing mode">
+            <option value="walking">Walking</option>
+            <option value="cycling">Cycling</option>
+            <option value="driving">Driving</option>
+            <option value="transit">Public transport</option>
+          </select>
+          <select id="transitModesSelect" aria-label="Public transport mode" class="hidden">
+            <option value="tube">Tube</option>
+            <option value="bus">Bus</option>
+            <option value="tube,bus">Tube + Bus</option>
+            <option value="national-rail">Train (National Rail)</option>
+            <option value="overground">Overground</option>
+            <option value="dlr">DLR</option>
+            <option value="tflrail">Elizabeth line</option>
+          </select>
+          <button id="btnEstimate" class="btn-primary" title="Estimate route distance/time">Estimate</button>
+          <button id="btnRouteDetails" title="Show per-leg breakdown" disabled>Details</button>
+          <div id="routeSummary" class="route-meta">Add 2+ stops to estimate distance & time.</div>
+          <label class="toggle" title="Automatically re-estimate when you change stops">
+            <input id="autoEstimate" type="checkbox" checked /> Auto
+          </label>
+        </div>
+
+        <div class="helper">
+          Tips: Right-click the map to add a stop. Drag <kbd>☰</kbd> to reorder. Expand a stop for times + notes.
+          Shortcuts: <kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd> undo, <kbd>Ctrl/Cmd</kbd>+<kbd>Y</kbd> redo, <kbd>Ctrl/Cmd</kbd>+<kbd>E</kbd> export.
+        </div>
+      </header>
+
+      <div class="list-wrap">
+        <ol class="list" id="stopList" aria-label="Stops"></ol>
+      </div>
+    </aside>
+
+    <main class="map">
+      <div id="map" aria-label="Map"></div>
+      <div id="toast" class="toast"></div>
+    </main>
+  </div>
+
+  <!-- Add Stop dialog -->
+  <dialog id="dlgAdd">
+    <div class="modal">
+      <header>
+        <h2>Add stop</h2>
+        <button id="dlgAddClose" class="icon-btn" aria-label="Close">✕</button>
+      </header>
+      <div class="content">
+        <div class="hint">Choose a name. If you opened this from the map, the coordinates are already set.</div>
+        <input id="addName" type="text" placeholder="e.g., Horizon 22" />
+        <div class="row">
+          <div class="hint mono" id="addCoords">lat,lng</div>
+          <div style="display:flex; gap:10px;">
+            <button id="btnAddCancel">Cancel</button>
+            <button class="btn-primary" id="btnAddConfirm">Add</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Export / Import dialog -->
+  <dialog id="dlgJson">
+    <div class="modal">
+      <header>
+        <h2 id="jsonTitle">Export / Import</h2>
+        <button id="dlgJsonClose" class="icon-btn" aria-label="Close">✕</button>
+      </header>
+      <div class="content">
+        <div class="row">
+          <div class="hint" id="jsonHint">JSON shown below.</div>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button id="btnCopy">Copy</button>
+            <button id="btnDownload">Download .json</button>
+          </div>
+        </div>
+
+        <textarea id="jsonBox" spellcheck="false"></textarea>
+
+        <div class="file">
+          <label class="hint">Import from file:</label>
+          <input id="fileInput" type="file" accept="application/json,.json" />
+          <button class="btn-primary" id="btnApplyImport">Apply import</button>
+        </div>
+
+        <div class="hint">
+          Expected format:
+          <span class="mono">{ "version": 2, "title": "…", "mode": "walking|cycling|driving|transit", "transitModes": "tube|bus|national-rail|…", "stops": [ {"name":"…","lat":51.5,"lng":-0.12,"startTime":"10:00","endTime":"11:00","notes":"…"} ] }</span>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Route details dialog -->
+  <dialog id="dlgRoute">
+    <div class="modal">
+      <header>
+        <h2>Route details</h2>
+        <button id="dlgRouteClose" class="icon-btn" aria-label="Close">✕</button>
+      </header>
+      <div class="content">
+        <div class="hint" id="routeDetailsHint">Per-leg breakdown (Stop 1 → Stop 2, etc.)</div>
+        <textarea id="routeDetailsBox" spellcheck="false" readonly style="min-height:260px;"></textarea>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Leaflet (map) -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+    defer
+  ></script>
+
+  <script>
+    // ============================
+    //  State + persistence
+    // ============================
+    const STORAGE_KEY = "itinerary_map_planner_v2";
+
+    /** @type {{id:string,name:string,lat:number,lng:number,startTime?:string,endTime?:string,notes?:string,expanded?:boolean}[]} */
+    let stops = [];
+    let itineraryTitle = "";
+    /** @type {"walking"|"cycling"|"driving"|"transit"} */
+    let mode = "walking";
+    let transitModes = "tube"; // e.g. "tube", "bus", "tube,bus", "national-rail"
+    let autoEstimate = true;
+
+    // Undo/Redo (in-memory)
+    const undoStack = [];
+    const redoStack = [];
+    let isApplyingHistory = false;
+
+    // Routing cache
+    let lastRoute = null; // { source: 'osrm'|'fallback', distanceM, durationS, legs: [...], geojsonLine?: [[lat,lng],...] }
+    let routeLine = null;
+
+    /** @type {L.Map} */
+    let map;
+    /** @type {L.LayerGroup} */
+    let markerLayer;
+
+    let pendingLatLng = null;
+    let activeStopId = null;
+
+    // ============================
+    //  Utilities
+    // ============================
+    const $ = (sel) => document.querySelector(sel);
+
+    function uid(){
+      return Math.random().toString(16).slice(2) + "_" + Date.now().toString(16);
+    }
+
+    function fmtCoord(n){
+      return (Math.round(n * 100000) / 100000).toFixed(5);
+    }
+
+    function showToast(msg, ms=1800){
+      const t = $("#toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      clearTimeout(showToast._timer);
+      showToast._timer = setTimeout(() => (t.style.display = "none"), ms);
+    }
+
+    function escapeHtml(str){
+      return String(str)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function clampStops(x){
+      if (!Array.isArray(x)) return [];
+      return x
+        .filter(s => s && typeof s.lat === "number" && typeof s.lng === "number")
+        .map(s => ({
+          id: typeof s.id === "string" ? s.id : uid(),
+          name: typeof s.name === "string" && s.name.trim() ? s.name.trim() : "Untitled stop",
+          lat: s.lat,
+          lng: s.lng,
+          startTime: typeof s.startTime === "string" ? s.startTime : "",
+          endTime: typeof s.endTime === "string" ? s.endTime : "",
+          notes: typeof s.notes === "string" ? s.notes : "",
+          expanded: !!s.expanded,
+        }));
+    }
+
+    function getState(){
+      return {
+        version: 2,
+        title: itineraryTitle,
+        mode,
+        transitModes,
+        autoEstimate,
+        stops: stops.map(s => ({
+          id: s.id,
+          name: s.name,
+          lat: s.lat,
+          lng: s.lng,
+          startTime: s.startTime || "",
+          endTime: s.endTime || "",
+          notes: s.notes || "",
+        }))
+      };
+    }
+
+    function applyState(state, { pushHistory = false } = {}){
+      if (!state) return;
+      if (pushHistory) recordUndo();
+
+      itineraryTitle = (state.title || "").trim();
+      mode = (state.mode === "cycling" || state.mode === "driving" || state.mode === "walking" || state.mode === "transit") ? state.mode : "walking";
+      transitModes = (typeof state.transitModes === "string" && state.transitModes.trim()) ? state.transitModes.trim() : "tube";
+      autoEstimate = typeof state.autoEstimate === "boolean" ? state.autoEstimate : true;
+      stops = clampStops(state.stops);
+      activeStopId = stops[0]?.id || null;
+
+      $("#itineraryTitle").value = itineraryTitle;
+      $("#modeSelect").value = mode;
+      $("#transitModesSelect").value = transitModes;
+      syncTransitUI();
+      $("#autoEstimate").checked = autoEstimate;
+
+      save();
+      renderAll();
+      if (stops.length) fitToStops();
+      scheduleEstimate();
+    }
+
+    function save(){
+      const payload = { ...getState(), updatedAt: new Date().toISOString() };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    }
+
+    function load(){
+      // 1) Share link in URL hash wins
+      const fromHash = tryLoadFromHash();
+      if (fromHash) return;
+
+      // 2) Local storage
+      try{
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!parsed) return;
+
+        // Back-compat: v1 payload (stops only)
+        if (parsed.version === 1 && Array.isArray(parsed.stops)){
+          applyState({ version: 2, title: "", mode: "walking", autoEstimate: true, stops: parsed.stops }, { pushHistory: false });
+          return;
+        }
+
+        if (parsed.version === 2){
+          applyState(parsed, { pushHistory: false });
+        }
+      }catch{ /* ignore */ }
+    }
+
+    // ============================
+    //  Undo / Redo
+    // ============================
+    function updateUndoRedoButtons(){
+      $("#btnUndo").disabled = undoStack.length === 0;
+      $("#btnRedo").disabled = redoStack.length === 0;
+    }
+
+    function recordUndo(){
+      if (isApplyingHistory) return;
+      undoStack.push(JSON.stringify(getState()));
+      if (undoStack.length > 100) undoStack.shift();
+      redoStack.length = 0;
+      updateUndoRedoButtons();
+    }
+
+    function undo(){
+      if (!undoStack.length) return;
+      isApplyingHistory = true;
+      try{
+        redoStack.push(JSON.stringify(getState()));
+        const prev = JSON.parse(undoStack.pop());
+        applyState(prev, { pushHistory: false });
+        showToast("Undid last change");
+      }finally{
+        isApplyingHistory = false;
+        updateUndoRedoButtons();
+      }
+    }
+
+    function redo(){
+      if (!redoStack.length) return;
+      isApplyingHistory = true;
+      try{
+        undoStack.push(JSON.stringify(getState()));
+        const next = JSON.parse(redoStack.pop());
+        applyState(next, { pushHistory: false });
+        showToast("Redid change");
+      }finally{
+        isApplyingHistory = false;
+        updateUndoRedoButtons();
+      }
+    }
+
+    // ============================
+    //  Rendering
+    // ============================
+    function updateCount(){
+      $("#stopCount").textContent = `${stops.length} stop${stops.length === 1 ? "" : "s"}`;
+    }
+
+    function numberedIcon(n){
+      return L.divIcon({
+        className: "",
+        iconSize: [30, 30],
+        iconAnchor: [15, 30],
+        popupAnchor: [0, -28],
+        html: `
+          <div style="
+            width:30px;height:30px;border-radius:999px;
+            display:grid;place-items:center;
+            font-weight:800;font-size:13px;
+            color:#061018;
+            background: linear-gradient(90deg, rgba(110,231,255,.95), rgba(167,139,250,.95));
+            border: 2px solid rgba(255,255,255,.55);
+            box-shadow: 0 8px 16px rgba(0,0,0,.30);
+          ">${n}</div>`
+      });
+    }
+
+    function renderList(){
+      const list = $("#stopList");
+      list.innerHTML = "";
+
+      stops.forEach((s, idx) => {
+        const li = document.createElement("li");
+        li.className = "stop" + (s.id === activeStopId ? " active" : "") + (s.expanded ? " expanded" : "");
+        li.dataset.id = s.id;
+
+        const drag = document.createElement("div");
+        drag.className = "drag";
+        drag.title = "Drag to reorder";
+        drag.textContent = "☰";
+
+        const nameWrap = document.createElement("div");
+        nameWrap.className = "name";
+
+        const badge = document.createElement("div");
+        badge.className = "badge";
+        badge.textContent = String(idx + 1);
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.value = s.name;
+        input.setAttribute("aria-label", `Stop ${idx + 1} name`);
+        input.addEventListener("input", () => {
+          s.name = input.value;
+        });
+        input.addEventListener("change", () => {
+          recordUndo();
+          s.name = input.value.trim() || "Untitled stop";
+          save();
+          renderAll({ keepListScroll: true });
+          scheduleEstimate();
+        });
+
+        nameWrap.appendChild(badge);
+        nameWrap.appendChild(input);
+
+        const meta = document.createElement("div");
+        meta.className = "meta";
+
+        const coordChip = document.createElement("span");
+        coordChip.className = "chip";
+        coordChip.textContent = `${fmtCoord(s.lat)}, ${fmtCoord(s.lng)}`;
+
+        const timeChip = document.createElement("span");
+        timeChip.className = "chip";
+        const hasTime = (s.startTime || s.endTime);
+        timeChip.textContent = hasTime ? `${s.startTime || "--:--"}–${s.endTime || "--:--"}` : "No time";
+
+        const notesChip = document.createElement("span");
+        notesChip.className = "chip";
+        notesChip.textContent = s.notes?.trim() ? "Has notes" : "No notes";
+
+        meta.appendChild(coordChip);
+        meta.appendChild(timeChip);
+        meta.appendChild(notesChip);
+
+        const actions = document.createElement("div");
+        actions.className = "actions";
+
+        const btnExpand = document.createElement("button");
+        btnExpand.className = "icon-btn";
+        btnExpand.title = s.expanded ? "Collapse" : "Expand";
+        btnExpand.textContent = s.expanded ? "▾" : "▸";
+        btnExpand.addEventListener("click", (e) => {
+          e.stopPropagation();
+          s.expanded = !s.expanded;
+          renderList();
+        });
+
+        const btnFocus = document.createElement("button");
+        btnFocus.className = "icon-btn";
+        btnFocus.title = "Zoom to stop";
+        btnFocus.textContent = "⌖";
+        btnFocus.addEventListener("click", (e) => {
+          e.stopPropagation();
+          focusStop(s.id);
+        });
+
+        const btnDelete = document.createElement("button");
+        btnDelete.className = "icon-btn btn-danger";
+        btnDelete.title = "Delete stop";
+        btnDelete.textContent = "🗑";
+        btnDelete.addEventListener("click", (e) => {
+          e.stopPropagation();
+          removeStop(s.id);
+        });
+
+        actions.appendChild(btnExpand);
+        actions.appendChild(btnFocus);
+        actions.appendChild(btnDelete);
+
+        const details = document.createElement("div");
+        details.className = "details";
+
+        const grid = document.createElement("div");
+        grid.className = "details-grid";
+
+        const startField = document.createElement("div");
+        startField.className = "field";
+        startField.innerHTML = `<label>Start</label>`;
+        const startInput = document.createElement("input");
+        startInput.type = "time";
+        startInput.value = s.startTime || "";
+        startInput.addEventListener("change", () => {
+          recordUndo();
+          s.startTime = startInput.value;
+          save();
+          renderAll({ keepListScroll: true });
+        });
+        startField.appendChild(startInput);
+
+        const endField = document.createElement("div");
+        endField.className = "field";
+        endField.innerHTML = `<label>End</label>`;
+        const endInput = document.createElement("input");
+        endInput.type = "time";
+        endInput.value = s.endTime || "";
+        endInput.addEventListener("change", () => {
+          recordUndo();
+          s.endTime = endInput.value;
+          save();
+          renderList();
+        });
+        endField.appendChild(endInput);
+
+        grid.appendChild(startField);
+        grid.appendChild(endField);
+
+        const notes = document.createElement("textarea");
+        notes.placeholder = "Notes (what to do, booking refs, dress code, etc.)";
+        notes.value = s.notes || "";
+        notes.addEventListener("input", () => { s.notes = notes.value; });
+        notes.addEventListener("change", () => {
+          recordUndo();
+          s.notes = notes.value;
+          save();
+          renderList();
+        });
+
+        const detailsActions = document.createElement("div");
+        detailsActions.className = "details-actions";
+
+        const btnMoveUp = document.createElement("button");
+        btnMoveUp.textContent = "Move up";
+        btnMoveUp.disabled = idx === 0;
+        btnMoveUp.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (idx === 0) return;
+          recordUndo();
+          const tmp = stops[idx-1];
+          stops[idx-1] = stops[idx];
+          stops[idx] = tmp;
+          save();
+          renderAll({ keepListScroll: true });
+          scheduleEstimate();
+        });
+
+        const btnMoveDown = document.createElement("button");
+        btnMoveDown.textContent = "Move down";
+        btnMoveDown.disabled = idx === stops.length - 1;
+        btnMoveDown.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (idx === stops.length - 1) return;
+          recordUndo();
+          const tmp = stops[idx+1];
+          stops[idx+1] = stops[idx];
+          stops[idx] = tmp;
+          save();
+          renderAll({ keepListScroll: true });
+          scheduleEstimate();
+        });
+
+        detailsActions.appendChild(btnMoveUp);
+        detailsActions.appendChild(btnMoveDown);
+
+        details.appendChild(grid);
+
+        // Route details for the leg starting at this stop
+        const routeLeg = document.createElement("div");
+        routeLeg.className = "route-leg";
+        routeLeg.id = `routeLeg-${s.id}`;
+        routeLeg.innerHTML = `<h4>Route</h4><div class="hint">Estimate a route to see details here.</div>`;
+
+        details.appendChild(routeLeg);
+        details.appendChild(notes);
+        details.appendChild(detailsActions);
+
+        li.appendChild(drag);
+        li.appendChild(nameWrap);
+        li.appendChild(meta);
+        li.appendChild(actions);
+        li.appendChild(details);
+
+        li.addEventListener("click", (e) => {
+          // Allow editing inputs/textarea without the card re-render stealing focus
+          if (e.target && e.target.closest && e.target.closest('input, textarea, button, select, label')) return;
+          focusStop(s.id);
+        });
+
+        list.appendChild(li);
+      });
+
+      updateCount();
+    }
+
+    function renderMarkers(){
+      markerLayer.clearLayers();
+
+      stops.forEach((s, i) => {
+        const m = L.marker([s.lat, s.lng], { icon: numberedIcon(i + 1), riseOnHover: true });
+        m.on("click", () => focusStop(s.id, { fromMarker: true }));
+
+        const timeLine = (s.startTime || s.endTime) ? `<div style="margin-top:6px;font-size:12px;"><span style="opacity:.75;">Time:</span> <b>${escapeHtml(s.startTime || "--:--")}</b>–<b>${escapeHtml(s.endTime || "--:--")}</b></div>` : "";
+        const notesLine = s.notes?.trim() ? `<div style="margin-top:6px;font-size:12px;opacity:.9;">${escapeHtml(s.notes).slice(0, 220)}${s.notes.length > 220 ? "…" : ""}</div>` : "";
+
+        m.bindPopup(`
+          <b>${escapeHtml(s.name)}</b>
+          <div style="margin-top:4px;font-family:ui-monospace,monospace;font-size:12px;opacity:.85;">${fmtCoord(s.lat)}, ${fmtCoord(s.lng)}</div>
+          ${timeLine}
+          ${notesLine}
+        `);
+
+        markerLayer.addLayer(m);
+      });
+    }
+
+    function renderRouteLine(){
+      if (routeLine){
+        routeLine.remove();
+        routeLine = null;
+      }
+
+      if (lastRoute?.geojsonLine?.length){
+        routeLine = L.polyline(lastRoute.geojsonLine, { weight: 5, opacity: 0.75 });
+        routeLine.addTo(map);
+        return;
+      }
+
+      // fallback: straight lines
+      if (stops.length >= 2){
+        const latlngs = stops.map(s => [s.lat, s.lng]);
+        routeLine = L.polyline(latlngs, { weight: 4, opacity: 0.55, dashArray: "6 8" });
+        routeLine.addTo(map);
+      }
+    }
+
+    function updateStopLegDetails(){
+      // Writes route details for each leg into the per-stop details panel without re-rendering the list.
+      // For stop i, we show the route from stop i -> stop i+1.
+      for (let i = 0; i < stops.length; i++){
+        const s = stops[i];
+        const el = document.getElementById(`routeLeg-${s.id}`);
+        if (!el) continue;
+
+        if (i >= stops.length - 1){
+          el.innerHTML = `<h4>Route</h4><div class="hint">End of itinerary.</div>`;
+          continue;
+        }
+
+        if (!lastRoute){
+          el.innerHTML = `<h4>Route</h4><div class="hint">Estimate a route to see details here.</div>`;
+          continue;
+        }
+
+        // Prefer rich transit segments (with steps); fall back to legs.
+        const seg = Array.isArray(lastRoute.segments) ? lastRoute.segments[i] : null;
+        const leg = Array.isArray(lastRoute.legs) ? lastRoute.legs[i] : null;
+
+        const toName = escapeHtml(stops[i+1]?.name || `Stop ${i+2}`);
+        const distanceM = seg?.distanceM ?? leg?.distanceM;
+        const durationS = seg?.durationS ?? leg?.durationS;
+
+        let stepsHtml = "";
+        const steps = seg?.steps || [];
+        if (steps.length){
+          const items = steps.map(st => {
+            const modeName = escapeHtml(st.modeName || st.modeId || "");
+            const summary = escapeHtml(st.summary || "");
+            const from = escapeHtml(st.fromName || "");
+            const to = escapeHtml(st.toName || "");
+            const places = (from || to) ? ` (${from}${from && to ? " → " : ""}${to})` : "";
+            const detail = summary ? ` — ${summary}` : "";
+            return `<li><b>${modeName}</b>${places}${detail}</li>`;
+          }).join("");
+          stepsHtml = `<ul>${items}</ul>`;
+        } else {
+          stepsHtml = `<div class="hint">No step-by-step details for this leg.</div>`;
+        }
+
+        el.innerHTML = `
+          <h4>Route to <span style="opacity:.9;"><b>${toName}</b></span></h4>
+          <div class="route-meta">
+            <span class="chip">${formatDistance(distanceM)}</span>
+            <span class="chip">${formatDuration(durationS)}</span>
+            <span class="chip">${escapeHtml(mode === "transit" ? ("Transit: " + (transitModes || "")) : ("Mode: " + mode))}</span>
+          </div>
+          ${stepsHtml}
+        `;
+      }
+    }
+
+    function renderAll(opts={}){
+      // keep list scroll stable for minor edits
+      const listWrap = document.querySelector('.list-wrap');
+      const prevScroll = opts.keepListScroll ? listWrap.scrollTop : 0;
+
+      renderList();
+      renderMarkers();
+      renderRouteLine();
+      updateStopLegDetails();
+
+      if (opts.keepListScroll) listWrap.scrollTop = prevScroll;
+
+      updateUndoRedoButtons();
+    }
+
+    // ============================
+    //  Core actions
+    // ============================
+    function focusStop(id, opts={}){
+      const s = stops.find(x => x.id === id);
+      if (!s) return;
+      activeStopId = id;
+      map.setView([s.lat, s.lng], Math.max(map.getZoom(), 15), { animate: true });
+      renderList();
+
+      if (!opts.fromMarker){
+        markerLayer.eachLayer(layer => {
+          if (layer.getLatLng && layer.getLatLng().lat === s.lat && layer.getLatLng().lng === s.lng){
+            layer.openPopup();
+          }
+        });
+      }
+
+      // Scroll card into view
+      const li = document.querySelector(`.stop[data-id="${CSS.escape(id)}"]`);
+      if (li) li.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+
+    function removeStop(id){
+      const idx = stops.findIndex(s => s.id === id);
+      if (idx === -1) return;
+      recordUndo();
+      stops.splice(idx, 1);
+      if (activeStopId === id) activeStopId = stops[idx]?.id || stops[idx-1]?.id || null;
+      save();
+      renderAll({ keepListScroll: true });
+      scheduleEstimate();
+      showToast("Stop removed");
+    }
+
+    function clearStops(){
+      recordUndo();
+      stops = [];
+      activeStopId = null;
+      lastRoute = null;
+      save();
+      renderAll();
+      updateRouteUI();
+      showToast("Cleared");
+    }
+
+    function openAddDialog(latlng){
+      pendingLatLng = latlng || pendingLatLng;
+      if (!pendingLatLng) pendingLatLng = map.getCenter();
+      $("#addCoords").textContent = `${fmtCoord(pendingLatLng.lat)}, ${fmtCoord(pendingLatLng.lng)}`;
+      $("#addName").value = "";
+      $("#dlgAdd").showModal();
+      setTimeout(() => $("#addName").focus(), 0);
+    }
+
+    function addStop(name){
+      if (!pendingLatLng) pendingLatLng = map.getCenter();
+      const n = (name || "").trim() || "Untitled stop";
+
+      recordUndo();
+      stops.push({ id: uid(), name: n, lat: pendingLatLng.lat, lng: pendingLatLng.lng, startTime: "", endTime: "", notes: "", expanded: true });
+      activeStopId = stops.at(-1).id;
+      pendingLatLng = null;
+      save();
+      renderAll({ keepListScroll: true });
+      scheduleEstimate();
+      showToast("Stop added");
+      focusStop(activeStopId);
+    }
+
+    function fitToStops(){
+      if (stops.length === 0) return;
+      const bounds = L.latLngBounds(stops.map(s => [s.lat, s.lng]));
+      map.fitBounds(bounds.pad(0.18), { animate: true });
+    }
+
+    // ============================
+    //  Export / Import / Share
+    // ============================
+    function exportPayload(){
+      return {
+        version: 2,
+        title: itineraryTitle,
+        mode,
+        transitModes,
+        autoEstimate,
+        createdAt: new Date().toISOString(),
+        stops: stops.map(s => ({
+          id: s.id,
+          name: (s.name || "").trim() || "Untitled stop",
+          lat: s.lat,
+          lng: s.lng,
+          startTime: s.startTime || "",
+          endTime: s.endTime || "",
+          notes: s.notes || "",
+        }))
+      };
+    }
+
+    function openExport(){
+      const payload = exportPayload();
+      $("#jsonTitle").textContent = "Export JSON";
+      $("#jsonHint").textContent = "Copy or download your itinerary JSON.";
+      $("#jsonBox").value = JSON.stringify(payload, null, 2);
+      $("#dlgJson").showModal();
+    }
+
+    function openImport(){
+      $("#jsonTitle").textContent = "Import JSON";
+      $("#jsonHint").textContent = "Paste JSON below or choose a .json file, then click Apply import.";
+      $("#jsonBox").value = "";
+      $("#fileInput").value = "";
+      $("#dlgJson").showModal();
+    }
+
+    function applyImport(){
+      let parsed;
+      try{ parsed = JSON.parse($("#jsonBox").value); }
+      catch{ showToast("Invalid JSON"); return; }
+
+      // v1 compatibility
+      if (parsed && parsed.version === 1 && Array.isArray(parsed.stops)){
+        parsed = { version: 2, title: "", mode: "walking", transitModes: "tube", autoEstimate: true, stops: parsed.stops };
+      }
+
+      if (!parsed || parsed.version !== 2 || !Array.isArray(parsed.stops)){
+        showToast("JSON format not recognized");
+        return;
+      }
+
+      recordUndo();
+      applyState(parsed, { pushHistory: false });
+      $("#dlgJson").close();
+      showToast("Imported");
+    }
+
+    function encodeShareLink(payload){
+      const json = JSON.stringify(payload);
+
+      // Prefer LZ-String if available
+      if (window.LZString?.compressToEncodedURIComponent){
+        const packed = window.LZString.compressToEncodedURIComponent(json);
+        return `${location.origin}${location.pathname}#data=${packed}`;
+      }
+
+      // Fallback: base64 (longer)
+      const b64 = btoa(unescape(encodeURIComponent(json)));
+      return `${location.origin}${location.pathname}#data_b64=${encodeURIComponent(b64)}`;
+    }
+
+    function decodeShareHash(){
+      const h = location.hash || "";
+      if (!h.startsWith("#")) return null;
+
+      const params = new URLSearchParams(h.slice(1));
+
+      if (params.has("data")){
+        const packed = params.get("data");
+        if (!packed) return null;
+        if (!window.LZString?.decompressFromEncodedURIComponent) return null;
+        const json = window.LZString.decompressFromEncodedURIComponent(packed);
+        if (!json) return null;
+        return JSON.parse(json);
+      }
+
+      if (params.has("data_b64")){
+        const b64 = params.get("data_b64");
+        if (!b64) return null;
+        const json = decodeURIComponent(escape(atob(decodeURIComponent(b64))));
+        return JSON.parse(json);
+      }
+
+      return null;
+    }
+
+    function tryLoadFromHash(){
+      try{
+        const parsed = decodeShareHash();
+        if (!parsed) return false;
+
+        // Accept v1/v2
+        if (parsed.version === 1 && Array.isArray(parsed.stops)){
+          applyState({ version: 2, title: parsed.title || "", mode: "walking", transitModes: "tube", autoEstimate: true, stops: parsed.stops }, { pushHistory: false });
+        } else if (parsed.version === 2){
+          applyState(parsed, { pushHistory: false });
+        } else {
+          return false;
+        }
+        showToast("Loaded itinerary from share link");
+        return true;
+      }catch{ return false; }
+    }
+
+    async function shareLink(){
+      const payload = exportPayload();
+      const url = encodeShareLink(payload);
+      try{
+        await navigator.clipboard.writeText(url);
+        showToast("Share link copied to clipboard");
+      }catch{
+        showToast("Couldn’t copy (browser permission). Open Export to copy manually.");
+      }
+    }
+
+    // ============================
+    //  Routing (OSRM + TfL + fallback)
+    // ============================
+    function formatDistance(m){
+      if (!Number.isFinite(m)) return "—";
+      if (m < 1000) return `${Math.round(m)} m`;
+      return `${(m/1000).toFixed(1)} km`;
+    }
+
+    function formatDuration(s){
+      if (!Number.isFinite(s)) return "—";
+      const sec = Math.round(s);
+      const h = Math.floor(sec / 3600);
+      const m = Math.round((sec % 3600) / 60);
+      if (h <= 0) return `${m} min`;
+      return `${h} h ${m} min`;
+    }
+
+    function haversine(a, b){
+      const R = 6371000;
+      const toRad = (d) => d * Math.PI / 180;
+      const dLat = toRad(b.lat - a.lat);
+      const dLng = toRad(b.lng - a.lng);
+      const lat1 = toRad(a.lat);
+      const lat2 = toRad(b.lat);
+      const x = Math.sin(dLat/2)**2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng/2)**2;
+      return 2 * R * Math.asin(Math.sqrt(x));
+    }
+
+    function fallbackEstimate(){
+      const legs = [];
+      let total = 0;
+
+      for (let i = 0; i < stops.length - 1; i++){
+        const d = haversine(stops[i], stops[i+1]);
+        legs.push({ from: stops[i].name, to: stops[i+1].name, distanceM: d, durationS: null });
+        total += d;
+      }
+
+      const speed = mode === "walking" ? 1.4 : mode === "cycling" ? 4.2 : 8.3; // m/s approx
+      const duration = total / speed;
+      legs.forEach(l => l.durationS = l.distanceM / speed);
+
+      return {
+        source: "fallback",
+        distanceM: total,
+        durationS: duration,
+        legs,
+        segments: legs.map(l => ({ ...l, steps: [] })),
+        geojsonLine: stops.map(s => [s.lat, s.lng])
+      };
+    }
+
+    async function osrmEstimate(){
+      const profile = mode; // walking | cycling | driving
+      const coords = stops.map(s => `${s.lng},${s.lat}`).join(";");
+      const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson&steps=false`;
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error(`OSRM HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data?.routes?.[0]) throw new Error("No OSRM route");
+
+      const route = data.routes[0];
+      const legs = (route.legs || []).map((leg, i) => ({
+        from: stops[i]?.name || `Stop ${i+1}`,
+        to: stops[i+1]?.name || `Stop ${i+2}`,
+        distanceM: leg.distance,
+        durationS: leg.duration
+      }));
+
+      const coordsLine = route.geometry?.coordinates?.map(([lng, lat]) => [lat, lng]) || null;
+
+      return {
+        source: "osrm",
+        distanceM: route.distance,
+        durationS: route.duration,
+        legs,
+        geojsonLine: coordsLine,
+        segments: legs.map(l => ({ from: l.from, to: l.to, distanceM: l.distanceM, durationS: l.durationS, steps: [] }))
+      };
+    }
+
+    function syncTransitUI(){
+      const show = mode === "transit";
+      const sel = $("#transitModesSelect");
+      if (!sel) return;
+      sel.classList.toggle("hidden", !show);
+    }
+
+    async function populateTfLModes(){
+      const sel = $("#transitModesSelect");
+      if (!sel) return;
+      try{
+        const res = await fetch("https://api.tfl.gov.uk/journey/meta/modes", { mode: "cors" });
+        if (!res.ok) return;
+        const modes = await res.json();
+        if (!Array.isArray(modes) || !modes.length) return;
+
+        const current = transitModes;
+        const byId = new Map(modes.map(m => [m.id, m]));
+        const preferred = ["tube","bus","national-rail","overground","dlr","tflrail","tram","river-bus","cable-car"];
+        const ordered = [];
+        for (const id of preferred){ if (byId.has(id)) { ordered.push(byId.get(id)); byId.delete(id); } }
+        for (const m of byId.values()) ordered.push(m);
+
+        sel.innerHTML = "";
+        for (const m of ordered){
+          const opt = document.createElement("option");
+          opt.value = m.id;
+          opt.textContent = m.modeName || m.name || m.id;
+          sel.appendChild(opt);
+        }
+        if ([...sel.options].some(o => o.value === current)) sel.value = current;
+      }catch{ /* ignore */ }
+    }
+
+    function parseTfLLineString(lineString){
+      // Usually a string like: "[[lat,lon],[lat,lon],...]"
+      if (!lineString) return null;
+      try{
+        if (typeof lineString === "string"){
+          const t = lineString.trim();
+          if (!t.startsWith("[")) return null;
+          const arr = JSON.parse(t);
+          if (!Array.isArray(arr)) return null;
+          const coords = arr
+            .filter(p => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+            .map(p => [p[0], p[1]]); // [lat, lon]
+          return coords.length ? coords : null;
+        }
+        if (Array.isArray(lineString)){
+          const coords = lineString
+            .filter(p => Array.isArray(p) && p.length >= 2 && Number.isFinite(p[0]) && Number.isFinite(p[1]))
+            .map(p => [p[0], p[1]]);
+          return coords.length ? coords : null;
+        }
+      }catch{ /* ignore */ }
+      return null;
+    }
+
+    function polylineDistance(latlngs){
+      if (!Array.isArray(latlngs) || latlngs.length < 2) return 0;
+      let total = 0;
+      for (let i=0; i<latlngs.length-1; i++){
+        total += haversine(
+          { lat: latlngs[i][0], lng: latlngs[i][1] },
+          { lat: latlngs[i+1][0], lng: latlngs[i+1][1] }
+        );
+      }
+      return total;
+    }
+
+    function tflAuthParams(){
+      // Optional: store these in localStorage as tfl_app_id / tfl_app_key
+      const appId = localStorage.getItem("tfl_app_id") || "";
+      const appKey = localStorage.getItem("tfl_app_key") || "";
+      const p = new URLSearchParams();
+      if (appId) p.set("app_id", appId);
+      if (appKey) p.set("app_key", appKey);
+      return p;
+    }
+
+    async function tflEstimateLeg(fromStop, toStop){
+      const from = `${fromStop.lat},${fromStop.lng}`;
+      const to = `${toStop.lat},${toStop.lng}`;
+
+      const qs = new URLSearchParams();
+      qs.set("mode", transitModes || "tube");
+
+      const auth = tflAuthParams();
+      for (const [k,v] of auth.entries()) qs.set(k, v);
+
+      const url = `https://api.tfl.gov.uk/Journey/JourneyResults/${encodeURIComponent(from)}/to/${encodeURIComponent(to)}?${qs.toString()}`;
+      const res = await fetch(url, { mode: "cors" });
+      if (!res.ok) throw new Error(`TfL HTTP ${res.status}`);
+      const data = await res.json();
+      const journey = data?.journeys?.[0];
+      if (!journey) throw new Error("No TfL journey");
+
+      const steps = [];
+      let routeLine = [];
+      let dist = 0;
+
+      for (const leg of (journey.legs || [])){
+        const modeId = leg?.mode?.id || "";
+        const modeName = leg?.mode?.name || modeId || "";
+        const summary = leg?.instruction?.summary || leg?.instruction?.detailed || leg?.instruction?.text || "";
+
+        const legDurMin = Number(leg?.duration);
+        const legDurS = Number.isFinite(legDurMin) ? legDurMin * 60 : null;
+
+        const ls = parseTfLLineString(leg?.path?.lineString);
+        const segLine = ls || [[fromStop.lat, fromStop.lng], [toStop.lat, toStop.lng]];
+        const legDist = ls ? polylineDistance(segLine) : haversine(fromStop, toStop);
+
+        if (segLine?.length){
+          if (!routeLine.length){
+            routeLine = segLine.slice();
+          } else {
+            const last = routeLine[routeLine.length - 1];
+            const first = segLine[0];
+            if (last && first && last[0] === first[0] && last[1] === first[1]) routeLine.push(...segLine.slice(1));
+            else routeLine.push(...segLine);
+          }
+        }
+
+        dist += legDist;
+
+        steps.push({
+          modeId,
+          modeName,
+          summary,
+          durationS: legDurS,
+          distanceM: legDist,
+          fromName: leg?.departurePoint?.commonName || "",
+          toName: leg?.arrivalPoint?.commonName || ""
+        });
+      }
+
+      const durMin = Number(journey?.duration);
+      const durationS = Number.isFinite(durMin) ? durMin * 60 : steps.reduce((a,s) => a + (s.durationS || 0), 0);
+
+      return { distanceM: dist, durationS, geojsonLine: routeLine, steps };
+    }
+
+    function fallbackTransitEstimate(){
+      // Approx: assume ~18 km/h average end-to-end (includes waits)
+      const speed = 5.0; // m/s
+      const segments = [];
+      let totalD = 0;
+      let totalT = 0;
+      const line = [];
+
+      for (let i=0; i<stops.length-1; i++){
+        const d = haversine(stops[i], stops[i+1]);
+        const t = d / speed;
+        totalD += d;
+        totalT += t;
+        segments.push({
+          from: stops[i].name,
+          to: stops[i+1].name,
+          distanceM: d,
+          durationS: t,
+          steps: [{ modeId: "transit", modeName: "Public transport", summary: "Approximate estimate", durationS: t, distanceM: d }]
+        });
+        if (line.length === 0) line.push([stops[i].lat, stops[i].lng]);
+        line.push([stops[i+1].lat, stops[i+1].lng]);
+      }
+
+      return {
+        source: "fallbackTransit",
+        distanceM: totalD,
+        durationS: totalT,
+        legs: segments.map(s => ({ from: s.from, to: s.to, distanceM: s.distanceM, durationS: s.durationS })),
+        segments,
+        geojsonLine: line
+      };
+    }
+
+    async function tflEstimateRoute(){
+      const segments = [];
+      let totalD = 0;
+      let totalT = 0;
+      let line = [];
+
+      for (let i=0; i<stops.length-1; i++){
+        const from = stops[i];
+        const to = stops[i+1];
+        const seg = await tflEstimateLeg(from, to);
+
+        totalD += seg.distanceM;
+        totalT += seg.durationS;
+
+        if (seg.geojsonLine?.length){
+          if (!line.length) line = seg.geojsonLine.slice();
+          else {
+            const last = line[line.length-1];
+            const first = seg.geojsonLine[0];
+            if (last && first && last[0] === first[0] && last[1] === first[1]) line.push(...seg.geojsonLine.slice(1));
+            else line.push(...seg.geojsonLine);
+          }
+        }
+
+        segments.push({ from: from.name, to: to.name, distanceM: seg.distanceM, durationS: seg.durationS, steps: seg.steps || [] });
+      }
+
+      return {
+        source: "tfl",
+        distanceM: totalD,
+        durationS: totalT,
+        legs: segments.map(s => ({ from: s.from, to: s.to, distanceM: s.distanceM, durationS: s.durationS })),
+        segments,
+        geojsonLine: line
+      };
+    }
+
+    function updateRouteUI(){
+      const summary = $("#routeSummary");
+      const detailsBtn = $("#btnRouteDetails");
+
+      if (!lastRoute || stops.length < 2){
+        summary.textContent = "Add 2+ stops to estimate distance & time.";
+        detailsBtn.disabled = true;
+        detailsBtn.title = "Add 2+ stops";
+        return;
+      }
+
+      const src =
+        lastRoute.source === "osrm" ? "OSRM" :
+        lastRoute.source === "tfl" ? "TfL" :
+        lastRoute.source === "fallbackTransit" ? "Approx (Transit)" :
+        "Approx";
+
+      const label = mode === "transit" ? `public transport (${transitModes})` : mode;
+      summary.textContent = `${src}: ${formatDistance(lastRoute.distanceM)} • ${formatDuration(lastRoute.durationS)} (${label})`;
+
+      detailsBtn.disabled = !(lastRoute.segments?.length || lastRoute.legs?.length);
+      detailsBtn.title = "Show per-leg breakdown";
+    }
+
+    function renderRouteDetails(){
+      if (!lastRoute){
+        $("#routeDetailsBox").value = "No route details yet.";
+        return;
+      }
+
+      const lines = [];
+      lines.push(`Title: ${itineraryTitle || "(untitled)"}`);
+      const label = mode === "transit" ? `public transport (${transitModes})` : mode;
+      lines.push(`Mode: ${label}`);
+      lines.push(`Total: ${formatDistance(lastRoute.distanceM)} • ${formatDuration(lastRoute.durationS)} (${lastRoute.source})`);
+      lines.push("");
+
+      const segments = lastRoute.segments || [];
+      if (segments.length){
+        segments.forEach((seg, i) => {
+          lines.push(`${i+1}. ${seg.from} → ${seg.to}`);
+          lines.push(`   ${formatDistance(seg.distanceM)} • ${formatDuration(seg.durationS)}`);
+          if (seg.steps?.length){
+            for (const step of seg.steps){
+              const stepLabel = step.modeName || step.modeId || "";
+              const stepSummary = step.summary ? ` — ${step.summary}` : "";
+              lines.push(`   • ${stepLabel}${stepSummary}`);
+            }
+          }
+          lines.push("");
+        });
+      } else if (lastRoute.legs?.length){
+        lastRoute.legs.forEach((l, i) => {
+          lines.push(`${i+1}. ${l.from} → ${l.to}`);
+          lines.push(`   ${formatDistance(l.distanceM)} • ${formatDuration(l.durationS)}`);
+        });
+      }
+
+      $("#routeDetailsBox").value = lines.join("\n");
+    }
+
+    function updateStopLegDetails(){
+      // For stop i, show route details for leg i -> i+1 in that stop’s details panel.
+      for (let i = 0; i < stops.length; i++){
+        const s = stops[i];
+        const el = document.getElementById(`routeLeg-${s.id}`);
+        if (!el) continue;
+
+        if (i >= stops.length - 1){
+          el.innerHTML = `<h4>Route</h4><div class="hint">End of itinerary.</div>`;
+          continue;
+        }
+
+        if (!lastRoute){
+          el.innerHTML = `<h4>Route</h4><div class="hint">Estimate a route to see details here.</div>`;
+          continue;
+        }
+
+        const seg = Array.isArray(lastRoute.segments) ? lastRoute.segments[i] : null;
+        const leg = Array.isArray(lastRoute.legs) ? lastRoute.legs[i] : null;
+
+        const toName = escapeHtml(stops[i+1]?.name || `Stop ${i+2}`);
+        const distanceM = seg?.distanceM ?? leg?.distanceM;
+        const durationS = seg?.durationS ?? leg?.durationS;
+
+        let stepsHtml = "";
+        const steps = seg?.steps || [];
+        if (steps.length){
+          const items = steps.map(st => {
+            const modeName = escapeHtml(st.modeName || st.modeId || "");
+            const summary = escapeHtml(st.summary || "");
+            const from = escapeHtml(st.fromName || "");
+            const to = escapeHtml(st.toName || "");
+            const places = (from || to) ? ` (${from}${from && to ? " → " : ""}${to})` : "";
+            const detail = summary ? ` — ${summary}` : "";
+            return `<li><b>${modeName}</b>${places}${detail}</li>`;
+          }).join("");
+          stepsHtml = `<ul>${items}</ul>`;
+        } else {
+          stepsHtml = `<div class="hint">No step-by-step details for this leg.</div>`;
+        }
+
+        el.innerHTML = `
+          <h4>Route to <span style="opacity:.9;"><b>${toName}</b></span></h4>
+          <div class="route-meta">
+            <span class="chip">${formatDistance(distanceM)}</span>
+            <span class="chip">${formatDuration(durationS)}</span>
+            <span class="chip">${escapeHtml(mode === "transit" ? ("Transit: " + (transitModes || "")) : ("Mode: " + mode))}</span>
+          </div>
+          ${stepsHtml}
+        `;
+      }
+    }
+
+    let estimateTimer = null;
+    function scheduleEstimate(){
+      if (!autoEstimate) return;
+      clearTimeout(estimateTimer);
+      estimateTimer = setTimeout(() => estimateRoute(), 700);
+    }
+
+    async function estimateRoute(){
+      if (stops.length < 2){
+        lastRoute = null;
+        updateRouteUI();
+        renderRouteLine();
+        updateStopLegDetails();
+        return;
+      }
+
+      $("#btnEstimate").disabled = true;
+      $("#routeSummary").textContent = "Estimating route…";
+
+      try{
+        lastRoute = (mode === "transit") ? await tflEstimateRoute() : await osrmEstimate();
+        updateRouteUI();
+        renderRouteLine();
+        renderRouteDetails();
+        updateStopLegDetails();
+        showToast("Route updated");
+      }catch(e){
+        console.warn(e);
+        lastRoute = (mode === "transit") ? fallbackTransitEstimate() : fallbackEstimate();
+        updateRouteUI();
+        renderRouteLine();
+        renderRouteDetails();
+        updateStopLegDetails();
+        showToast("Using approximate estimate");
+      }finally{
+        $("#btnEstimate").disabled = false;
+      }
+    }
+
+    async function init(){
+      if (!window.L){
+        console.error("Leaflet failed to load. Check network/CSP/script blockers.");
+        showToast("Leaflet didn’t load — check your connection or script blockers.", 6000);
+        return;
+      }
+
+      map = L.map("map", { zoomControl: true });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 20,
+        attribution: "&copy; OpenStreetMap contributors"
+      }).addTo(map);
+
+      markerLayer = L.layerGroup().addTo(map);
+      map.setView([51.5072, -0.1276], 12);
+
+      map.getContainer().addEventListener("contextmenu", (e) => e.preventDefault());
+      map.on("contextmenu", (e) => {
+        pendingLatLng = e.latlng;
+        openAddDialog(pendingLatLng);
+      });
+
+      load();
+      syncTransitUI();
+      renderAll();
+      if (stops.length) fitToStops();
+      updateRouteUI();
+
+      populateTfLModes();
+
+      if (window.Sortable){
+        new Sortable($("#stopList"), {
+          handle: ".drag",
+          animation: 160,
+          onEnd: () => {
+            recordUndo();
+            const orderedIds = [...$("#stopList").children].map(li => li.dataset.id);
+            const byId = new Map(stops.map(s => [s.id, s]));
+            stops = orderedIds.map(id => byId.get(id)).filter(Boolean);
+            save();
+            renderAll({ keepListScroll: true });
+            scheduleEstimate();
+            showToast("Reordered");
+          }
+        });
+      }
+
+      $("#itineraryTitle").addEventListener("input", () => { itineraryTitle = $("#itineraryTitle").value; });
+      $("#itineraryTitle").addEventListener("change", () => {
+        recordUndo();
+        itineraryTitle = $("#itineraryTitle").value.trim();
+        save();
+        showToast("Title updated");
+      });
+
+      $("#btnAdd").addEventListener("click", () => openAddDialog(null));
+      $("#btnExport").addEventListener("click", openExport);
+      $("#btnImport").addEventListener("click", openImport);
+      $("#btnShare").addEventListener("click", shareLink);
+      $("#btnClear").addEventListener("click", () => { if (confirm("Clear all stops?")) clearStops(); });
+
+      $("#btnUndo").addEventListener("click", undo);
+      $("#btnRedo").addEventListener("click", redo);
+
+      $("#btnLocate").addEventListener("click", () => {
+        if (!navigator.geolocation){ showToast("Geolocation not supported"); return; }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const { latitude, longitude } = pos.coords;
+            map.setView([latitude, longitude], 14, { animate: true });
+            showToast("Centered on your location");
+          },
+          () => showToast("Couldn’t get your location")
+        );
+      });
+
+      $("#modeSelect").addEventListener("change", () => {
+        recordUndo();
+        mode = $("#modeSelect").value;
+        syncTransitUI();
+        save();
+        estimateRoute();
+      });
+
+      $("#transitModesSelect").addEventListener("change", () => {
+        recordUndo();
+        transitModes = $("#transitModesSelect").value;
+        save();
+        if (mode === "transit") estimateRoute();
+      });
+
+      $("#autoEstimate").addEventListener("change", () => {
+        recordUndo();
+        autoEstimate = $("#autoEstimate").checked;
+        save();
+        if (autoEstimate) scheduleEstimate();
+      });
+
+      $("#btnEstimate").addEventListener("click", estimateRoute);
+      $("#btnRouteDetails").addEventListener("click", () => {
+        renderRouteDetails();
+        $("#dlgRoute").showModal();
+      });
+
+      $("#dlgAddClose").addEventListener("click", () => $("#dlgAdd").close());
+      $("#btnAddCancel").addEventListener("click", () => $("#dlgAdd").close());
+      $("#btnAddConfirm").addEventListener("click", () => { addStop($("#addName").value); $("#dlgAdd").close(); });
+      $("#addName").addEventListener("keydown", (e) => {
+        if (e.key === "Enter"){ e.preventDefault(); $("#btnAddConfirm").click(); }
+      });
+
+      $("#dlgJsonClose").addEventListener("click", () => $("#dlgJson").close());
+      $("#btnCopy").addEventListener("click", async () => {
+        try{ await navigator.clipboard.writeText($("#jsonBox").value); showToast("Copied to clipboard"); }
+        catch{ showToast("Copy failed (browser permission)"); }
+      });
+
+      $("#btnDownload").addEventListener("click", () => {
+        const blob = new Blob([$("#jsonBox").value], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = (itineraryTitle?.trim() ? itineraryTitle.trim().replaceAll(/[^a-z0-9]+/gi, "_") : "itinerary") + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      });
+
+      $("#btnApplyImport").addEventListener("click", applyImport);
+
+      $("#fileInput").addEventListener("change", async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try{
+          const text = await file.text();
+          $("#jsonBox").value = text;
+          showToast("Loaded file (click Apply import)");
+        }catch{
+          showToast("Couldn’t read file");
+        }
+      });
+
+      $("#dlgRouteClose").addEventListener("click", () => $("#dlgRoute").close());
+
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "Escape"){
+          if ($("#dlgAdd").open) $("#dlgAdd").close();
+          if ($("#dlgJson").open) $("#dlgJson").close();
+          if ($("#dlgRoute").open) $("#dlgRoute").close();
+        }
+
+        const mod = (e.ctrlKey || e.metaKey);
+        if (!mod) return;
+
+        const k = e.key.toLowerCase();
+        if (k === "z"){
+          e.preventDefault();
+          if (e.shiftKey) redo(); else undo();
+        } else if (k === "y"){
+          e.preventDefault();
+          redo();
+        } else if (k === "e"){
+          e.preventDefault();
+          openExport();
+        }
+      });
+
+      if (stops.length === 0){
+        showToast("Right-click the map to add your first stop");
+      }
+
+      scheduleEstimate();
+    }
+
+    window.addEventListener("DOMContentLoaded", init);
+  </script>
+</body>
+</html>
