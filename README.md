@@ -67,3 +67,18 @@ A lightweight, client-side web app for building day itineraries on an interactiv
   - `Enter` to confirm add stop
   - `Esc` closes dialogs
 
+### Usage
+- Goto: https://itzmorphinetime.github.io/RoutePlanner/
+- Right-click on the map to add a stop.
+- Drag & drop stops in the left panel to reorder the itinerary.
+- Edit each stop’s start/end times and notes.
+- Choose a routing mode (Walking/Cycling/Driving/Public transport).
+- Click Estimate (or enable Auto estimate) to compute travel time/distance.
+- Use Export to copy/download JSON, or Share to copy a link.
+
+###Tech Stack
+- Leaflet for map rendering
+- OpenStreetMap tiles
+- SortableJS for drag & drop stop reordering
+- OSRM (public demo server) for walking/cycling/driving routing
+- TfL Journey Planner API for public transport routing
